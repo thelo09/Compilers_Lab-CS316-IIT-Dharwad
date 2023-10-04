@@ -1,0 +1,1189 @@
+%{
+#include<stdio.h>
+#include<iostream>
+#include<bits/stdc++.h>
+using namespace std;
+
+int yylex();
+void yyerror(const char *s);
+std::pair<std::string,std::string> mypair;
+bool variable_dec = false;
+string s="";
+string code="";
+int scope = -1;
+int block = 1;
+int param = 0;
+int back = 17;
+int local_count = 0;
+int l = 1;
+int current_scope = 0;
+int rwc = 0;
+bool print = false,initial_dec=true,func=false;
+int reg =0;
+stack<string> ifstmt;
+stack<string> whstmt;
+stack<int>pushed;
+stack<int>scopes;
+int p = 0;
+string ret = "$19";
+struct readwrite{
+	vector<string> name;
+};
+
+struct entry{
+	vector<string> scope_name;
+	vector<string> name;
+	vector<string> type;
+	vector<string> value;
+	vector<int> line_number;
+	unordered_map<string,int>hash_map;
+	unordered_map<string,string>data_type;
+	unordered_map<string,string> args_alias;
+	unordered_map<string,string> local_alias;
+	int args_count = 18;
+	int local_count = -1;
+	string code = "";
+	priority_queue <int> pq;
+};
+vector<entry>tabel(100);
+vector<readwrite>rw(100);
+
+struct TreeNode {
+    string nodetype;
+	string nodevalue;
+	string datatype;
+    vector<TreeNode*> children;
+	string code;
+	string reg;
+	vector<TreeNode*> args;
+
+    TreeNode(string nodetype,string nodevalue,string datatype) {
+        this->nodetype = nodetype;
+		this->nodevalue = nodevalue;
+		this->datatype = datatype; 
+		this->children.clear();
+		this->code = "";
+		this-> reg= "";
+    }
+};
+
+
+
+stringstream ss;
+string var_datatype(int scope,string id){
+	int found = 0;
+	string ans = "";
+	stack<int>copy(scopes);
+	while(!copy.empty()&&ans==""){
+		int scope = copy.top();
+		copy.pop();
+		for(auto& it: tabel[scope].data_type){
+							if(it.first==id){
+								found = 1;
+								ans+=it.second;
+								break;
+							}
+						}
+	}
+	return ans;
+}
+string alias(int scope,string id){
+	int found = 0;
+	string ans = "";
+	stack<int>copy(scopes);
+	while(copy.top()!=0&&ans==""){
+		int scope = copy.top();
+		copy.pop();
+		for(auto& it: tabel[scope].args_alias){
+							if(it.first==id){
+								found = 1;
+								ans+=it.second;
+								break;
+							}
+						}
+				if(!found){
+					for(auto& it: tabel[scope].local_alias){
+							if(it.first==id){
+								found = 1;
+								ans+=it.second;
+								break;
+							}
+						}
+				}
+	if(ans==""){
+		for(auto& it: tabel[scope].name){
+							if(it==id+"_"+to_string(scope)){
+								found = 1;
+								ans+=it;
+							}
+						}
+		}
+	}
+	if(ans==""){
+		for(auto& it: tabel[0].name){
+							if(it==id+"_"+to_string(0)){
+								found = 1;
+								ans+=it;
+							}
+						}
+		}
+		if(ans=="")
+		ans+=id;
+			// 
+	// ss<<id<<" "<<ans<<"\n";
+		return ans;
+	}
+TreeNode * postorder(TreeNode * root){
+	if(root!=NULL){
+		for(int i=0;i<root->children.size();i++){
+			postorder(root->children[i]);
+		}
+		//<<root->nodevalue<<" "<<root->nodetype<<"\n";
+		// ss<<"post "<<root->nodevalue<<" "<<root->nodetype<<"\n";
+		string regi = "r"+to_string(reg);
+		//<<"return\n";
+		if(root->nodetype=="assign"){
+			
+		// tabel[scope].pq.pop();
+		// ss<<"hi\n";
+		    //  cout<<"\n"; 
+			// cout<<root->nodevalue<<" "<<root->children[0]->nodetype<<" "<<root->children[1]->nodetype<<"\n";
+			// cout<<root->nodevalue<<" "<<root->children[0]->nodevalue<<" "<<root->children[1]->nodevalue<<"\n";
+			string lhs="",rhs="";
+			if(root->children[0]->nodetype=="identifier")
+				lhs+=alias(current_scope,root->children[0]->nodevalue);
+			else
+				lhs+=root->children[0]->nodevalue;
+			if(root->children[1]->nodetype=="identifier")
+				rhs+=alias(current_scope,root->children[1]->nodevalue);
+			else
+				rhs+=root->children[1]->nodevalue;
+			// ss<<lhs<<" "<<rhs<<endl;
+
+			if(root->children[1]->datatype=="INT"){
+				//c1<<root->children[1]->nodevalue<<"\n";
+				ss<<"move "<<rhs<<" "<<regi<<"\n";
+				ss<<"move "<<regi <<" "<<lhs<<"\n";
+				reg++;
+			}
+			else if(root->children[1]->datatype=="FLOAT"){
+				//c1<<stof(root->children[1]->nodevalue)<<" "<<root->children[1]->datatype<<"\n";
+				// ss<<root->children[1]->nodevalue<<" "<<root->children[0]->nodevalue<<"\n";
+				ss<<"move "<<rhs<<" "<<regi<<"\n";
+				ss<<"move "<<regi <<" "<<lhs<<"\n";
+				reg++;
+			}
+			else{
+			string code = root->children[1]->code;
+			code+="move "+root->children[1]->reg+" "+lhs+"\n";
+			// tabel[scope].pq.push(stoi(root->children[1]->reg.substr(1)));
+			ss<<code;
+			}
+
+		}
+		else if(root->nodetype=="op")
+		{
+			// string regi = "r"+to_string(tabel[scope].pq.top());
+		// tabel[scope].pq.pop();
+		// ss<<"hi\n";
+			// cout<<"hi\n";
+			// cout<<root->nodevalue<<" "<<root->children[0]->nodetype<<" "<<root->children[1]->nodetype<<"\n";
+			// cout<<root->nodevalue<<" "<<root->children[0]->nodevalue<<" "<<root->children[1]->nodevalue<<"\n";
+			string lhs="",rhs="";
+			if(root->children[0]->nodetype=="identifier"){
+				lhs+=alias(current_scope,root->children[0]->nodevalue);
+				// ss<<"lhs"<<lhs<<" "<<root->children[0]->nodevalue<<"\n";
+			}
+			else
+				lhs+=root->children[0]->nodevalue;
+			if(root->children[1]->nodetype=="identifier")
+				rhs+=alias(current_scope,root->children[1]->nodevalue);
+			else
+				rhs+=root->children[1]->nodevalue;
+			// code+=rhs+" "+lhs+"\n";
+			// ss<<root->nodevalue<<" "<<root->children[0]->nodetype<<" "<<root->children[1]->nodetype<<"\n";
+			string k = root->children[0]->code+root->children[1]->code;
+			// ss<<lhs<<" "<<rhs<<endl;
+			// ss<<root->nodevalue<<" "<<root->children[0]->datatype<<" "<<root->children[1]->datatype<<"\n";
+			if(root->children[0]->nodetype!="op")
+			{
+				k+="move "+lhs+" "+regi+"\n";
+				if(root->children[0]->datatype=="FLOATop"||root->children[1]->datatype=="FLOAT")
+				{
+					if(root->nodevalue=="+") k+="addr ";
+				if(root->nodevalue=="-") k+="subr ";
+				if(root->nodevalue=="*") k+="mulr ";
+				if(root->nodevalue=="/") k+="divr ";
+				}
+				else{
+					// ss<<"1\n";
+				if(root->nodevalue=="+") k+="addi ";
+				if(root->nodevalue=="-") k+="subi ";
+				if(root->nodevalue=="*") k+="muli ";
+				if(root->nodevalue=="/") {
+					k+="divi ";
+					//c1<<"hi hello"<<"0"<<root->children[0]->datatype<<"1"<<root->children[1]->datatype<<"\n";
+
+				};
+				}
+				if(root->children[1]->reg!="")
+				k+= root->children[1]->reg+" "+regi+"\n";
+				else
+				k+= rhs+" "+regi+"\n";
+				root->reg+=regi;
+				root->datatype+=root->children[0]->datatype+"op";
+				reg++;
+
+			}
+			else
+			{
+				k+="move "+root->children[0]->reg+" "+regi+"\n";
+				if(root->children[0]->datatype=="FLOATop"||root->children[1]->datatype=="FLOAT")
+				{
+					if(root->nodevalue=="+") k+="addr ";
+				if(root->nodevalue=="-") k+="subr ";
+				if(root->nodevalue=="*") k+="mulr ";
+				if(root->nodevalue=="/") k+="divr ";
+				}
+				else{
+					// ss<<"2\n";
+				if(root->nodevalue=="+") k+="addi ";
+				if(root->nodevalue=="-") k+="subi ";
+				if(root->nodevalue=="*") k+="muli ";
+				if(root->nodevalue=="/") {
+					k+="divi ";
+					//c1<<"hi hello"<<"0"<<root->children[0]->datatype<<"1"<<root->children[1]->datatype<<"\n";
+
+				};
+				}
+				if(root->children[1]->reg!="")
+				k+= root->children[1]->reg+" "+regi+"\n";
+				else
+				k+= alias(scope,root->children[1]->nodevalue)+" "+regi+"\n";
+				root->reg+=regi;
+				reg++;
+			}
+			//c1<<k<<"\n";
+			root->code+=k;
+			ss<<root->code;
+		}
+
+	}
+	// ss<<"return\n";
+	// ss<<root->code;
+	return root;
+}
+
+// To print the pushed registers.
+void push_reg(){
+	code+="push \n";
+	for(int i=0;i<15;i++){
+		code+="push r";
+		code+=to_string(i);
+		code+="\n";
+	}
+}
+
+%}
+%token PROGRAM _BEGIN STRING READ WRITE FUNCTION RETURN IF ELSE END WHILE ENDWHILE CONTINUE BREAK ENDIF
+
+%union{
+	int k;
+	char * s;
+	std::pair<std::string,int>* mypair;
+	char* strval;
+	char* chrval;
+	struct TreeNode * tree;
+}
+/* %type <mypair> string_decl; */
+/* %type <s>str  */
+%type <strval> string_decl var_decl var_type any_type
+%token <strval>  FLOAT INT VOID INTLITERAL FLOATLITERAL
+%token <mypair> IDENTIFIER STRINGLITERAL
+%type <mypair> id str
+%type <tree> expr expr_prefix factor factor_prefix postfix_expr primary assign_expr mulop addop compop expr_list expr_list_tail call_expr
+
+%%
+program:	PROGRAM id _BEGIN 
+			{
+				scope++; 
+				scopes.push(scope);
+				tabel[scope].scope_name.push_back("GLOBAL");
+			}
+			pgm_body END
+			{
+				// for(int i=0;i<=scope;i++){
+				// 	// int n = tabel[scope].scope_name.size();
+				// 	//c1<<i<<"\n";
+				// 	if(i!=0)
+				// 	ss<<"\n";
+				// 	ss<<"Symbol table "<<tabel[i].scope_name[0]<<"\n";
+				// 	//c1<<tabel[0].name.size()<<"\n";
+				// 	for(int j=0;j<tabel[i].name.size();j++){
+				// 		if(tabel[i].type[j][0]=='s'){
+				// 			ss<<"name "<<tabel[i].name[j]<<" type STRING value "<<tabel[i].value[j]<<"\n";
+				// 			// name newline type STRING value "\n"
+				// 		}
+				// 		else if(tabel[i].type[j][0]=='v'){
+				// 			ss<<"name "<<tabel[i].name[j]<<" type "<<tabel[i].value[j]<<"\n";
+				// 		}
+				// 	}
+				// 	//c1<<"\n";
+				// }
+				scopes.pop();
+				code+="end";
+				cout<<code;
+				// ss<<"end";
+				// cout<<ss.str();
+			}
+			;
+id:			IDENTIFIER
+			{   //c//out<<"call_expr\n";
+				//c1<<"Flag\n";
+				//c1<<$1->first<<"\n";
+				$$->first = $1->first;
+				$$->second = $1->second;
+			}
+			;
+pgm_body:	decl func_declarations
+			;
+decl:		string_decl decl | var_decl decl |
+			;
+string_decl:	STRING id ':''=' str ';'
+				{
+					string identifier = ($2)->first+"_"+to_string(scope);
+					// cout<<identifier<<"\n";
+					string value=($5)->first;
+					if(tabel[scope].hash_map.find(identifier)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==identifier){
+								flag = it.second;
+								break;
+							}
+						}
+						ss<<"DECLARATION ERROR "<<identifier<<" (previous declaration was at line "<<flag<<" )";
+						return 0;
+					}
+					tabel[scope].hash_map.insert(make_pair(identifier,($5)->second));
+					tabel[scope].data_type.insert(make_pair(identifier,value));
+					tabel[scope].name.push_back(identifier);
+					tabel[scope].type.push_back("s");
+					tabel[scope].value.push_back(value);
+					tabel[scope].line_number.push_back(($5)->second);
+					//c1<<"pushed to "<<tabel[scope].scope_name[0]<<"\n";
+					//c1<<tabel[scope].name.size()<<"\n";
+					//c1<<scope<<"\n";
+					code="str "+identifier+" "+value+"\n"+code;
+				}
+				;
+str:		STRINGLITERAL
+			{
+				$$->first = ($1)->first;
+				$$->second = ($1)->second;
+			}
+			;
+var_decl:	var_type
+			{
+				variable_dec = true;
+			} id_list ';';
+			/* {
+				// if(print){
+				// for(int i=0;i<rw[rwc].name.size();i++){
+				// 	code+="var "+rw[rwc].name[i]+"\n";
+				// }
+				// rwc++;
+				// }
+			} */
+var_type:	FLOAT
+			{
+
+				string k = "FLOAT";
+				strcpy($$,k.c_str());
+				s.clear();
+				s+="FLOAT";
+				// ss<<s<<"\n";
+			}
+			| INT
+			{	
+				string k = "INT";
+				strcpy($$,k.c_str());
+				s.clear();
+				s+="INT";
+			}
+			;
+any_type:	var_type | VOID
+			{
+				string k = "VOID";
+				strcpy($$,k.c_str());
+				s.clear();
+				s+="VOID";
+			}
+			;
+id_list:	id
+			{
+				// ss<<"INT am in id\n";
+				// ss<<$1->first<<" "<<func<<" "<<variable_dec<<"\n";
+				if(variable_dec){
+					
+					if(tabel[scope].hash_map.find(($1)->first)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==($1)->first){
+								flag = it.second;
+								break;
+							}
+						}
+						ss<<"DECLARATION ERROR "<<($1)->first<<" (previous declaration was at line "<<flag<<")\n";
+						return 0;
+					}
+					tabel[scope].hash_map.insert(make_pair(($1)->first,($1)->second));
+					tabel[scope].data_type.insert(make_pair(($1)->first,s));
+					// s.clear();
+					tabel[scope].name.push_back(($1)->first);
+					tabel[scope].type.push_back("v");
+					tabel[scope].value.push_back(s);
+					tabel[scope].line_number.push_back(($1)->second);
+					if(scope==0)
+					{
+						code = "var "+($1)->first+"\n"+code;
+					}
+					// ss<<tabel[scope].name.size()<<" "<<scope<<"\n";
+					// rw[rwc].name.push_back($1->first);
+					if(func)
+					{
+						local_count++;
+						string local = "$"+to_string(tabel[current_scope].local_count);
+						tabel[current_scope].local_count--;
+						tabel[current_scope].local_alias.insert(make_pair($1->first,local));
+						// ss<<"INT am in id\n";
+						// ss<<$1->first<<" "<<local<<" "<<scope<<"\n";
+					}
+
+				}
+				if(print){
+					rw[rwc].name.push_back($1->first);
+				}
+			}
+			 id_tail;
+id_tail:	',' id 
+			{
+				if(variable_dec){
+					// ss<<func<<"\n";
+					if(tabel[scope].hash_map.find(($2)->first)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==($2)->first){
+								flag = it.second;
+								break;
+							}
+						}
+						ss<<"DECLARATION ERROR "<<($2)->first<<" (previous declaration was at line "<<flag<<")\n";
+						return 0;
+					}
+					tabel[scope].hash_map.insert(make_pair(($2)->first,($2)->second));
+					tabel[scope].data_type.insert(make_pair(($2)->first,s));
+					// s.clear();
+					tabel[scope].name.push_back(($2)->first);
+					tabel[scope].type.push_back("v");
+					tabel[scope].value.push_back(s);
+					tabel[scope].line_number.push_back(($2)->second);
+					if(scope==0)
+					{
+						code = "var "+($2)->first+"\n"+code;
+					}
+					// rw[rwc].name.push_back($2->first);
+					if(func)
+					{
+						local_count++;
+						string local = "$"+to_string(tabel[current_scope].local_count);
+						tabel[current_scope].local_count--;
+						tabel[current_scope].local_alias.insert(make_pair($2->first,local));
+						// ss<<$2->first<<" "<<local<<"\n";
+					}
+
+				}
+				if(print){
+					rw[rwc].name.push_back($2->first);
+				}
+			}
+			id_tail |{
+				variable_dec = false;
+				print = false;
+			}
+			;
+param_decl_list:	param_decl param_decl_tail
+					{
+						// ss<<"param_decl param_decl_tail\n";
+					} |
+					;
+param_decl:	var_type id
+			{
+				// ss<<"var_type id\n";
+				if(tabel[scope].hash_map.find(($2)->first)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==($2)->first){
+								flag = it.second;
+								break;
+							}
+						}
+						ss<<"DECLARATION ERROR "<<($2)->first<<" (previous declaration was at line "<<flag<<")\n";
+						return 0;
+					}
+					// string s = $1;
+					// ss<<$1<<"\n";
+					tabel[scope].hash_map.insert(make_pair(($2)->first,($2)->second));
+					tabel[scope].data_type.insert(make_pair(($2)->first,$1));
+					s.clear();
+					tabel[scope].name.push_back(($2)->first);
+					tabel[scope].type.push_back("v");
+					tabel[scope].value.push_back($1);
+					tabel[scope].line_number.push_back(($2)->second);
+					if(func){
+						// back++;
+						string parameter = "$"+to_string(tabel[scope].args_count);
+						tabel[scope].args_alias.insert(make_pair(($2)->first,parameter));
+						tabel[scope].args_count++;
+					}
+			}
+			;
+param_decl_tail:	',' param_decl param_decl_tail
+					{
+						// ss<<"',' param_decl param_decl_tail\n";
+					} |
+					;
+func_declarations:	func_decl func_declarations |
+					;
+func_decl:	FUNCTION any_type id
+			{
+				if(initial_dec)
+				{
+					push_reg();
+					code+="jsr main\nsys halt\n";
+					initial_dec = false;
+				}
+				scope++; 
+				scopes.push(scope);
+				// cout<<scope<<" "<<($3)->first<<"\n";
+				current_scope = scope;
+				tabel[scope].scope_name.push_back(($3)->first);
+				tabel[scope].type.push_back($2);
+				// for(int i=0;i<100;i++)
+				// 	tabel[scope].pq.push(i);
+				code+="label "+($3)->first+"\n";
+				back  = 17;
+				local_count = 0;
+				func = true;
+				// ss<<func<<"\n";
+			}
+			 '(' param_decl_list ')' _BEGIN func_body END
+			 {
+				// func = false;
+				code+="link ";
+				code += to_string(local_count);
+				code += "\n";
+				// if(tabel[scope].type[0]=="VOID"){
+				// 	ss<<"move 0 r"<<reg<<"\n";
+				// 	ss<<"move r"<<reg<<" "<<ret<<"\n";
+				// 	ss<<"unlnk\nret\n";
+				// }
+				// ss<<scope<<"\n";
+				code+=ss.str();
+				ss.str("");
+				
+				func = false;
+				back = 17;
+				local_count =0;
+				current_scope = 0;
+				scopes.pop();
+				// cout<<"Done with function\n";
+				// cout<<code<<"\n";
+				// for(int i = 0;i<tabel[scope].name.size();i++)
+				//  ss<<tabel[scope].name[i]<<" ";
+				//  ss<<"\n";
+				
+			 }
+			 
+			;
+func_body:	decl stmt_list 
+			;
+stmt_list:	stmt stmt_list |
+			;
+stmt:		base_stmt | if_stmt | while_stmt
+			;
+base_stmt:	assign_stmt | read_stmt | write_stmt | return_stmt
+			;
+assign_stmt:	assign_expr ';'
+				;
+assign_expr:	id ':''=' expr
+				{  //<<"call_expr\n";
+					TreeNode *root = new TreeNode("assign","=","ASSIGN");
+					TreeNode *left = new TreeNode("identifier",$1->first,var_datatype(current_scope,($1)->first));
+					root->children.push_back(left);
+					root->children.push_back($4);
+					postorder(root);
+				}
+				;
+read_stmt:	READ
+			{
+				print = true;
+			} 
+			'(' id_list ')'';'
+			{
+				for(int i=0;i<rw[rwc].name.size();i++)
+				{
+					string type = var_datatype(current_scope,rw[rwc].name[i]);
+					// ss<<"type "<<type<<"\n";
+					string name ="";
+					if(tabel[current_scope].hash_map.find(rw[rwc].name[i])!=tabel[current_scope].hash_map.end())
+						name+=alias(current_scope,rw[rwc].name[i]);
+					else
+						name+=rw[rwc].name[i];
+					if(type=="INT")
+					{
+					ss<<"sys readi "<<name<<"\n";
+					}
+					else if(type=="FLOAT")
+					{
+						ss<<"sys readr "<<name<<"\n";
+					}
+					else {
+						ss<<"sys reads "<<name<<"\n";
+					}
+				
+				}
+				rwc++;
+			}
+			;
+write_stmt:	WRITE
+			{
+				print = true;
+			} 
+			'(' id_list ')'';'
+			{
+				
+				for(int i=0;i<rw[rwc].name.size();i++)
+				{
+					//c1<<rw[rwc].name[i]<<"\n";
+					string name ="";
+					stack<int>copy(scopes);
+					while(!copy.empty()&&name==""){
+						name+=alias(copy.top(),rw[rwc].name[i]);
+						copy.pop();
+					}
+					string type = var_datatype(current_scope,rw[rwc].name[i]);
+					stack<int>copy1(scopes);
+					while(!copy1.empty()&&type==""){
+						type+=alias(copy1.top(),rw[rwc].name[i]);
+						copy1.pop();
+					}
+					// cout<<name<<"\n";
+					if(type=="INT")
+					{
+					ss<<"sys writei "<<name<<"\n";
+					}
+					else if(type=="FLOAT")
+					{
+						ss<<"sys writer "<<name<<"\n";
+					}
+					else{
+						ss<<"sys writes "<<name<<"\n";
+					}				
+				}
+				rwc++;
+			}
+			;
+return_stmt:	RETURN expr ';'
+			{
+				// ss<<"RETURN\n";
+				// cout<<$1->nodetype<<" "<<$1->nodevalue<<" "<<$1->reg<<"\n";
+				TreeNode *root = postorder($2);
+				ss>>root->code;
+				// ss<<root->nodetype<<" "<<root->nodevalue<<" "<<root->code<<"\n";
+				// string name="";
+				// cout<<root->nodetype<<" "<<root->nodevalue<<" "<<root->reg<<"\n";
+				string ret = "$"+to_string(back);
+				if(root->nodetype=="identifier")
+				{
+					string name = alias(current_scope,root->nodevalue);//change
+					string regi = "r"+to_string(reg);
+					// tabel[scope].pq.pop();
+					ss<<"move "<<name<<" "<<regi<<"\n";
+					ss<<"move "<<regi<<" "<<ret<<"\n";
+				}
+				else if(root->nodetype=="integer"||root->nodetype=="float")
+				{
+					ss<<"move "<<root->nodevalue<<" r0\n";
+					ss<<"move r0 "<<" "<<ret<<"\n";
+				}
+				else if(root->nodetype=="op")
+				{
+					ss<<"move "<<root->reg<<" "<<ret<<"\n";
+				}
+				ss<<"unlnk\nret\n";
+				// 
+				// cout<<"Done with retuen\n";
+			}
+				;
+expr:		expr_prefix factor
+			{
+				// $$->children.push_back($2);	
+				if($1==NULL){
+					$$ = $2;
+				}
+				else
+				{
+					$1->children.push_back($2);
+					$$ = $1;
+				}
+			}
+			;
+expr_prefix:	expr_prefix factor addop
+			{
+				if($1==NULL){
+					$3->children.push_back($2);
+					$$ = $3;
+				}
+				else
+				{
+					$1->children.push_back($2);
+					$3->children.push_back($1);
+					$$ = $3; 
+				}
+			} 
+			|
+			{
+				$$ = NULL;
+			}
+				;
+factor:		factor_prefix postfix_expr
+			{
+				if($1==NULL){
+					$$ = $2;
+				}
+				else
+				{
+					$1->children.push_back($2);
+					$$ = $1;
+				}
+				
+			}
+			;
+factor_prefix:	factor_prefix postfix_expr mulop
+			{
+				if($1==NULL)
+				{
+					$3->children.push_back($2);
+					$$ = $3;
+				}
+				else
+				{
+					$1->children.push_back($2);
+					$3->children.push_back($1);
+					$$ = $3;
+				}
+			} 
+			|
+			{
+				$$ = NULL;
+			}
+			;
+postfix_expr:	primary 
+			{
+				$$ = $1;
+			} | call_expr{
+				TreeNode *root = new TreeNode("identifier",$1->reg,"call_expr");
+				root->reg+=$1->reg;
+				$$=root;}
+				;
+call_expr:	id '(' expr_list ')'
+			{  
+				ss<<"push \n";
+				for(int i=0;i<15;i++){
+					ss<<"push r"<<i<<"\n";
+				}
+				string regi = "r"+to_string(reg);
+				// tabel[scope].pq.pop();
+				ss<<"jsr "<<$1->first<<"\n";
+				
+				// ss<<"pop \n";
+				for(int i=14;i>=0;i--){
+					ss<<"pop r"<<i<<"\n";
+				}
+				ss<<"pop "<<regi<<"\n";
+				TreeNode *root = new TreeNode("op","call_expr","call_expr");
+				root->reg += regi;
+				$$ = root;
+				int popped = pushed.top();
+				pushed.pop();
+				// ss<<"popped "<<popped<<"\n";
+				for(int i=0;i<popped;i++){
+					ss<<"pop \n";
+				}
+				reg++;
+			}
+			;
+expr_list:	expr  expr_list_tail 
+			{  
+				TreeNode *root = postorder($1);
+				ss<<root->code;
+				string name ="";
+				// ss<<root->nodetype<<" "<<root->nodevalue<<" "<<root->reg<<"\n";
+				if(root->nodetype=="identifier"){
+					if(tabel[current_scope].hash_map.find(root->nodevalue)!=tabel[current_scope].hash_map.end())
+						name+=alias(current_scope,root->nodevalue);
+					else
+					    name+=root->nodevalue;
+				}
+				else if(root->nodetype=="op")
+						name+=root->reg;
+				else if(root->nodetype=="integer"||root->nodetype=="float"){
+						ss<<"move "<<root->nodevalue<<" r"<<reg<<"\n";
+						name+="r"+to_string(reg);
+				}
+				ss<<"push "<<name<<"\n";
+				//ss<<p<<"\n";
+				p++;
+				//ss<<p<<"\n";
+				if($2==NULL)
+				$$ = $1;
+				else{
+					//$2->children.push_back($1);
+					$$=$2;
+				}
+				
+				//TreeNode *root = postorder($1);
+				//if(root->nodetype=="identifier");
+				pushed.push(p);
+				p=0;
+			}
+			| {
+				
+				$$ = NULL;
+			}
+			;
+expr_list_tail:	',' expr  expr_list_tail {
+			TreeNode *k = new TreeNode("op","h","j");
+	 		$$ = new TreeNode("identifier","h","j");
+			TreeNode *root = postorder($2);
+			// ss<<root->nodetype<<" "<<root->nodevalue<<" "<<root->reg<<"\n";
+				string name ="";
+				if(root->nodetype=="identifier"){
+					if(tabel[current_scope].hash_map.find(root->nodevalue)!=tabel[current_scope].hash_map.end())
+						name+=alias(current_scope,root->nodevalue);
+					else 
+						name+=root->nodevalue;
+				}
+				else if(root->nodetype=="op")
+						name+=root->reg;
+				else if(root->nodetype=="integer"||root->nodetype=="float"){
+						ss<<"move "<<root->nodevalue<<" r"<<reg<<"\n";
+						name+="r"+to_string(reg);
+				}
+				ss<<"push "<<name<<"\n";
+				//ss<<p<<"\n";
+				p++;
+				//ss<<p<<"\n";
+				}| 
+				{
+				// pushed.push(p);
+				// p=0;
+				$$ = NULL;
+				}
+				;
+primary:	'(' expr ')'
+			{
+				$$ = $2;
+				// $$->children.push_back($2);
+			} 
+			|
+			id
+			{
+				$$ = new TreeNode("identifier",($1)->first,var_datatype(current_scope,($1)->first));
+				
+				// ss<<"Hi hello\n";
+				// ss<<var_datatype(current_scope,($1)->first)<<"\n";
+			}
+			|
+			INTLITERAL
+			{
+				$$ = new TreeNode("integer",$1,"INT");
+			}
+			| 
+			FLOATLITERAL
+			{
+				 $$ = new TreeNode("float",$1,"FLOAT");
+				//  ss<<$1<<"\n";
+			}
+			;
+addop:		'+'
+			{
+				$$ = new TreeNode("op","+","");
+			}
+			|
+			'-'
+			{
+				$$ = new TreeNode("op","-","");
+			}
+			;
+mulop:		'*'
+			{
+				$$ = new TreeNode("op","*","");
+			}
+			|
+			'/'
+			{
+				$$ = new TreeNode("op","/","");
+			}
+			;
+if_stmt:IF 
+		{
+			//<<"In if\n";
+			scope++; 
+			scopes.push(scope);
+			string b = "BLOCK" + to_string(block);
+			block++;
+			tabel[scope].scope_name.push_back(b);
+			ifstmt.push("label"+to_string(l));
+			l++;
+		}
+		'(' cond ')' decl stmt_list else_part ENDIF
+		{
+			// cout<<"Done with if\n";
+			string endif = ifstmt.top();
+			ifstmt.pop();
+			ss<<"label "<<endif<<"\n";
+			scopes.pop();
+		};
+else_part: ELSE
+		   {
+			scope++; 
+			scopes.push(scope);
+			string b = "BLOCK" + to_string(block);
+			block++;
+			tabel[scope].scope_name.push_back(b);
+			string els = ifstmt.top();
+			ifstmt.pop();
+			ifstmt.push("label"+to_string(l));
+			ss<<"jmp "<<"label"+to_string(l)<<"\n";
+			ss<<"label "<<els<<"\n";
+			l++;
+			scopes.pop();
+		   }
+		    decl stmt_list |;
+cond: expr compop expr
+		{   
+			TreeNode *root1 = postorder($1);
+			TreeNode *root2 = postorder($3);
+			//<<"cond done"<<endl;
+			//<<root1->reg<<" "<<root1->datatype<<" "<<root1->nodevalue<<" "<<root1->nodetype<<"\n";
+			// cout<<root2->reg<<" "<<root2->datatype<<" "<<root2->nodevalue<<" "<<root2->nodetype<<"\n";
+			string r ="";
+			// ss<<root1->datatype<<" "<<root2->datatype<<"\n";
+			// ss<<root1->nodevalue<<" "<<root2->nodevalue<<"\n";
+			// ss<<root1->nodetype<<" "<<root2->nodetype<<"\n";
+			string lhs="",rhs="";
+			if(root1->nodetype=="identifier")
+			{
+				lhs = alias(scope,root1->nodevalue);
+			}
+			else if(root1->nodetype=="integer"||root1->nodetype=="float")
+			{
+				lhs = root1->nodevalue;
+			}
+			if(root2->nodetype=="identifier")
+			{
+				rhs = alias(scope,root2->nodevalue);
+			}
+			else if(root2->nodetype=="integer"||root2->nodetype=="float")
+			{
+				rhs = root2->nodevalue;
+			}
+			// cout<<rhs<<" "<<lhs<<"\n";
+			if(root1->datatype=="FLOATop"||root1->datatype=="FLOAT"||root2->datatype=="FLOATop"||root2->datatype=="FLOAT")
+			{
+				r += "r";
+			}
+			else
+			{
+				r += "i";
+			}
+			if(root1->reg==""&&root2->reg=="")
+			{
+				int flag1 = 0,flag2 = 0;
+				if(root1->nodetype=="integer"||root1->nodetype=="float"||root1->nodetype=="identifier")
+				{
+					ss<<"move"<<" "<<lhs <<" "<<"r"+to_string(reg)<<"\n";
+					reg++;
+					flag1 = 1;
+				}
+				if(root2->nodetype=="integer"||root2->nodetype=="float"||root1->nodetype=="identifier")
+				{
+					ss<<"move"<<" "<<rhs<<" "<<"r"+to_string(reg)<<"\n";
+					reg++;
+					flag2 = 1;
+				}
+				if(flag1==1 && flag2==1)
+				{
+					ss<<"cmp"<<r<<" "<<"r"+to_string(reg-2) <<" "<<"r"+to_string(reg-1)<<"\n";
+				}
+				else if(flag1==1 && flag2==0)
+				{
+					ss<<"cmp"<<r<<" "<<"r"+to_string(reg-1) <<" "<<rhs<<"\n";
+				}
+				else if(flag1==0 && flag2==1)
+				{
+					ss<<"cmp"<<r<<" "<<lhs <<" "<<"r"+to_string(reg-1)<<"\n";
+				}
+				else
+				{
+					ss<<"cmp"<<r<<" "<<lhs <<" "<<rhs<<"\n";
+				}
+			}
+			else if(root1->reg==""&&root2->reg!="")
+			{
+				int flag = 0;
+				if(root1->nodetype=="integer"||root1->nodetype=="float")
+				{
+					ss<<"move"<<" "<<lhs <<" "<<"r"+to_string(reg)<<"\n";
+					reg++;
+					flag = 1;
+				}
+				if(flag==1)
+				{
+					ss<<"cmp"<<r<<" "<<"r"+to_string(reg-1) <<" "<<root2->reg<<"\n";
+				}
+				else
+				{
+					ss<<"cmp"<<r<<" "<<lhs <<" "<<root2->reg<<"\n";
+				}
+			}
+			else if(root1->reg!=""&&root2->reg=="")
+			{
+				int flag = 0;
+				if(root2->nodetype=="integer"||root2->nodetype=="float")
+				{
+					ss<<"move"<<" "<<rhs<<" "<<"r"+to_string(reg)<<"\n";
+					reg++;
+					flag = 1;
+				}
+				if(flag==1)
+				{
+					ss<<"cmp"<<r<<" "<<root1->reg <<" "<<"r"+to_string(reg-1)<<"\n";
+				}
+				else
+				{
+					ss<<"cmp"<<r<<" "<<root1->reg <<" "<<rhs<<"\n";
+				}
+			}
+			else
+			{
+				ss<<"cmp"<<r<<" "<<root1->reg<<" "<<root2->reg<<"\n";
+			}
+			// ifstmt.push("label"+to_string(l));
+			string p = ifstmt.top();
+			// l++;
+			if($2->nodevalue=="<")
+				ss<<"jge "<<p<<"\n";
+			else if($2->nodevalue==">")
+				ss<<"jle "<<p<<"\n";
+			else if($2->nodevalue=="=")
+				ss<<"jne "<<p<<"\n";
+			else if($2->nodevalue=="!=")
+				ss<<"jeq "<<p<<"\n";
+			else if($2->nodevalue=="<=")
+				ss<<"jgt "<<p<<"\n";
+			else if($2->nodevalue==">=")
+				ss<<"jlt "<<p<<"\n";
+		};
+compop:'<'
+		{
+			$$ = new TreeNode("less","<","geq");
+		} 
+		|
+		'>'
+		{
+			$$ = new TreeNode("grt",">","grt");
+		}
+		| 
+		'='
+		{
+			$$ = new TreeNode("eql","=","eql");
+		} 
+		| 
+		'!' '='
+		{
+			$$ = new TreeNode("neq","!=","neq");
+		} 
+		| 
+		'<' '='
+		{
+			$$ = new TreeNode("leq","<=","leq");
+		} 
+		| 
+		'>' '='
+		{
+			$$ = new TreeNode("geq",">=","geq");
+		};
+while_stmt: WHILE
+			{
+			scope++; 
+			scopes.push(scope);
+			string b = "BLOCK" + to_string(block);
+			block++;
+				tabel[scope].scope_name.push_back(b);
+			ifstmt.push("label"+to_string(l));
+			ss<<"label label"<<l<<"\n";
+			l++;
+			ifstmt.push("label"+to_string(l));
+			whstmt.push("label"+to_string(l));
+			l++;
+		    } '(' cond ')' decl aug_stmt_list ENDWHILE
+			{
+				string l1 = ifstmt.top();
+				ifstmt.pop();
+				string l2 = ifstmt.top();
+				ifstmt.pop();
+				ss<<"jmp "<<l2<<"\n";
+				ss<<"label "<<l1<<"\n";
+				scopes.pop();
+			};
+aug_stmt_list: aug_stmt aug_stmt_list |;
+aug_stmt: base_stmt | aug_if_stmt | while_stmt | CONTINUE ';' | 
+			BREAK ';'
+			{ss<<"jmp "<<whstmt.top()<<"\n";
+			whstmt.pop();
+			};
+aug_if_stmt: IF 
+			{
+				scope++; 
+				scopes.push(scope);
+			string b = "BLOCK" + to_string(block);
+			block++;
+			tabel[scope].scope_name.push_back(b);
+			ifstmt.push("label"+to_string(l));
+			l++;
+			}'(' cond ')' decl aug_stmt_list aug_else_part ENDIF
+			{
+				string endif = ifstmt.top();
+			ifstmt.pop();
+			ss<<"label "<<endif<<"\n";
+			scopes.pop();
+			};
+aug_else_part: ELSE
+			{
+				scope++; 
+				scopes.push(scope);
+			string b = "BLOCK" + to_string(block);
+			block++;
+			tabel[scope].scope_name.push_back(b);
+			string els = ifstmt.top();
+			ifstmt.pop();
+			ifstmt.push("label"+to_string(l));
+			ss<<"jmp "<<"label"+to_string(l)<<"\n";
+			ss<<"label "<<els<<"\n";
+			l++;
+			scopes.pop();
+			} decl aug_stmt_list |;
+%%

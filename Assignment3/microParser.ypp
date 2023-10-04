@@ -1,0 +1,272 @@
+%{
+#include<stdio.h>
+#include<iostream>
+#include<bits/stdc++.h>
+using namespace std;
+
+int yylex();
+void yyerror(const char *s);
+std::pair<std::string,std::string> mypair;
+bool variable_dec = false;
+char * s;
+int scope = -1;
+int block = 1;
+
+struct entry{
+	vector<string> scope_name;
+	vector<string> name;
+	vector<string> type;
+	vector<string> value;
+	vector<int> line_number;
+	unordered_map<string,int>hash_map;
+};
+vector<entry>tabel(100);
+
+%}
+%token PROGRAM _BEGIN FLOATLITERAL INTLITERAL STRINGLITERAL STRING READ WRITE FUNCTION RETURN IF ELSE ROF END WHILE ENDWHILE CONTINUE BREAK ENDIF
+
+%union{
+	int k;
+	char * s;
+	std::pair<std::string,int>* mypair;
+	char* strval;
+	char* chrval;
+}
+/* %type <mypair> string_decl; */
+/* %type <s>str  */
+%type <strval> string_decl var_decl var_type
+%token <strval> IDENTIFIER 
+%token <chrval> FLOAT INT VOID
+%type <mypair> id str
+
+%%
+program:	PROGRAM id _BEGIN 
+			{
+				scope++;
+				tabel[scope].scope_name.push_back("GLOBAL");
+			}
+			pgm_body END
+			{
+				for(int i=0;i<=scope;i++){
+					// int n = tabel[scope].scope_name.size();
+					// cout<<i<<"\n";
+					if(i!=0)
+					cout<<"\n";
+					cout<<"Symbol table "<<tabel[i].scope_name[0]<<"\n";
+					// cout<<tabel[0].name.size()<<"\n";
+					for(int j=0;j<tabel[i].name.size();j++){
+						if(tabel[i].type[j][0]=='s'){
+							cout<<"name "<<tabel[i].name[j]<<" type STRING value "<<tabel[i].value[j]<<"\n";
+						}
+						else if(tabel[i].type[j][0]=='v'){
+							cout<<"name "<<tabel[i].name[j]<<" type "<<tabel[i].value[j]<<"\n";
+						}
+					}
+					// cout<<"\n";
+				}
+			}
+			;
+id:			IDENTIFIER{}
+			;
+pgm_body:	decl func_declarations
+			;
+decl:		string_decl decl | var_decl decl |
+			;
+string_decl:	STRING id ':''=' str ';'
+				{
+					string identifier = ($2)->first,value=($5)->first;
+					if(tabel[scope].hash_map.find(identifier)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==identifier){
+								flag = it.second;
+								break;
+							}
+						}
+						cout<<"DECLARATION ERROR "<<identifier<<" (previous declaration was at line "<<flag<<" )";
+						return 0;
+					}
+					tabel[scope].hash_map.insert(make_pair(identifier,($5)->second));
+					tabel[scope].name.push_back(identifier);
+					tabel[scope].type.push_back("s");
+					tabel[scope].value.push_back(value);
+					tabel[scope].line_number.push_back(($5)->second);
+					// cout<<"pushed to "<<tabel[scope].scope_name[0]<<"\n";
+					// cout<<tabel[scope].name.size()<<"\n";
+					// cout<<scope<<"\n";
+				}
+				;
+str:		STRINGLITERAL
+			;
+var_decl:	var_type
+			{
+				variable_dec = true;
+			} id_list ';'
+			;
+var_type:	FLOAT
+			{
+				s = $1;
+			}
+			| INT
+			{
+				s = $1;
+			}
+			;
+any_type:	var_type | VOID
+			{
+				s = $1;
+			}
+			;
+id_list:	id
+			{
+				if(variable_dec){
+					if(tabel[scope].hash_map.find(($1)->first)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==($1)->first){
+								flag = it.second;
+								break;
+							}
+						}
+						cout<<"DECLARATION ERROR "<<($1)->first<<" (previous declaration was at line "<<flag<<")\n";
+						return 0;
+					}
+					tabel[scope].hash_map.insert(make_pair(($1)->first,($1)->second));
+					tabel[scope].name.push_back(($1)->first);
+					tabel[scope].type.push_back("v");
+					tabel[scope].value.push_back(s);
+					tabel[scope].line_number.push_back(($1)->second);
+
+				}
+			}
+			 id_tail{}
+			;
+id_tail:	',' id 
+			{
+				if(variable_dec){
+					if(tabel[scope].hash_map.find(($2)->first)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==($2)->first){
+								flag = it.second;
+								break;
+							}
+						}
+						cout<<"DECLARATION ERROR "<<($2)->first<<" (previous declaration was at line "<<flag<<")\n";
+						return 0;
+					}
+					tabel[scope].hash_map.insert(make_pair(($2)->first,($2)->second));
+					tabel[scope].name.push_back(($2)->first);
+					tabel[scope].type.push_back("v");
+					tabel[scope].value.push_back(s);
+					tabel[scope].line_number.push_back(($2)->second);
+
+				}
+			}
+			id_tail |{
+				variable_dec = false;
+			}
+			;
+param_decl_list:	param_decl param_decl_tail |
+					;
+param_decl:	var_type id
+			{
+				if(tabel[scope].hash_map.find(($2)->first)!=tabel[scope].hash_map.end()){
+						int flag = 0;
+						for(auto& it: tabel[scope].hash_map){
+							if(it.first==($2)->first){
+								flag = it.second;
+								break;
+							}
+						}
+						cout<<"DECLARATION ERROR "<<($2)->first<<" (previous declaration was at line "<<flag<<")\n";
+						return 0;
+					}
+					tabel[scope].hash_map.insert(make_pair(($2)->first,($2)->second));
+					tabel[scope].name.push_back(($2)->first);
+					tabel[scope].type.push_back("v");
+					tabel[scope].value.push_back($1);
+					tabel[scope].line_number.push_back(($2)->second);
+			}
+			;
+param_decl_tail:	',' param_decl param_decl_tail |
+					;
+func_declarations:	func_decl func_declarations |
+					;
+func_decl:	FUNCTION any_type id
+			{
+				scope++;
+				tabel[scope].scope_name.push_back(($3)->first);
+			}
+			 '(' param_decl_list ')' _BEGIN func_body END
+			;
+func_body:	decl stmt_list 
+			;
+stmt_list:	stmt stmt_list |
+			;
+stmt:		base_stmt | if_stmt | while_stmt
+			;
+base_stmt:	assign_stmt | read_stmt | write_stmt | return_stmt
+			;
+assign_stmt:	assign_expr ';'
+				;
+assign_expr:	id ':''=' expr
+				;
+read_stmt:	READ '(' id_list ')'';'
+			;
+write_stmt:	WRITE '(' id_list ')'';'
+			;
+return_stmt:	RETURN expr ';'
+				;
+expr:		expr_prefix factor
+			;
+expr_prefix:	expr_prefix factor addop |
+				;
+factor:		factor_prefix postfix_expr
+			;
+factor_prefix:	factor_prefix postfix_expr mulop |
+			;
+postfix_expr:	primary | call_expr
+				;
+call_expr:	id '(' expr_list ')'
+			;
+expr_list:	expr expr_list_tail |
+			;
+expr_list_tail:	',' expr expr_list_tail |
+				;
+primary:	'(' expr ')' | id | INTLITERAL | FLOATLITERAL
+			;
+addop:		'+'|'-'
+			;
+mulop:		'*'|'/'
+			;
+if_stmt:IF 
+		{
+			scope++;
+			string b = "BLOCK" + to_string(block);
+			block++;
+				tabel[scope].scope_name.push_back(b);
+		}
+		'(' cond ')' decl stmt_list else_part ENDIF;
+else_part: ELSE
+		   {
+			scope++;
+			string b = "BLOCK" + to_string(block);
+			block++;
+				tabel[scope].scope_name.push_back(b);
+		   }
+		    decl stmt_list |;
+cond: expr compop expr;
+compop:'<' | '>' | '=' | '!' '=' | '<' '=' | '>' '=';
+while_stmt: WHILE
+			{
+			scope++;
+			string b = "BLOCK" + to_string(block);
+			block++;
+				tabel[scope].scope_name.push_back(b);
+		    } '(' cond ')' decl aug_stmt_list ENDWHILE;
+aug_stmt_list: aug_stmt aug_stmt_list |;
+aug_stmt: base_stmt | aug_if_stmt | while_stmt | CONTINUE ';' | BREAK ';';
+aug_if_stmt: IF '(' cond ')' decl aug_stmt_list aug_else_part ENDIF;
+aug_else_part: ELSE decl aug_stmt_list |;
+%%
